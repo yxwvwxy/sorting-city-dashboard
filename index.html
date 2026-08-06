@@ -592,6 +592,27 @@
       return `${mm}-${dd} ${hh}:${mi}`;
     }
 
+    /** Comparable ET wall-clock ms (bucket encoding: wall time as UTC). */
+    function bucketWallMs(iso) {
+      const d = new Date(iso);
+      return Date.UTC(
+        d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(),
+        d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()
+      );
+    }
+
+    /** Latest scrape instant → same ET wall-clock encoding as bucket_time. */
+    function scrapedEtWallMs(iso) {
+      const p = etParts(iso, {
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+      });
+      return Date.UTC(
+        Number(p.year), Number(p.month) - 1, Number(p.day),
+        Number(p.hour), Number(p.minute), Number(p.second || 0)
+      );
+    }
+
     function renderHourlyThroughput(rows) {
       if (!rows.length) {
         $("hourly-total").textContent = "—";
@@ -601,10 +622,12 @@
         return;
       }
       const total = Number(rows[rows.length - 1].cumulative_volume || 0);
-      const firstMs = new Date(rows[0].first_scraped_at || rows[0].scraped_at).getTime();
-      const lastMs = new Date(rows[0].last_scraped_at || rows[rows.length - 1].scraped_at).getTime();
+      // Denominator = production span on the chart: first hour bucket → latest scrape (ET).
+      // (Not first→last feed scrape — that can be only a few hours while bars span the whole day.)
+      const firstMs = bucketWallMs(rows[0].bucket_time);
+      const lastIso = rows[0].last_scraped_at || rows[rows.length - 1].scraped_at;
+      const lastMs = scrapedEtWallMs(lastIso);
       const elapsedHours = Math.max((lastMs - firstMs) / 3_600_000, 1 / 60);
-      // Hourly average = total volume ÷ elapsed hours between first and latest scrape.
       const avg = total / elapsedHours;
       $("hourly-total").textContent = fmt(total);
       $("hourly-avg").textContent = fmt(Math.round(avg));
