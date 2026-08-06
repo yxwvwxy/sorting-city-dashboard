@@ -439,6 +439,11 @@
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhsbGltbWd4a3R0anphaWtpbXR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0ODkwODcsImV4cCI6MjA5MzA2NTA4N30.ULSAIUVpnnCIPUYexpdUh6dxYe40e9LHSmG-7QcAZL0";
     const USERNAME_DOMAIN = "sorting-db.local";
     const COLORS = ["#F0A202","#3DDC97","#4CC9F0","#F72585","#B8F2E6","#FF6B35","#7BDFF2","#F9C74F","#90BE6D","#577590","#F8961E","#43AA8B","#F94144","#277DA1","#F3722C"];
+    const HOVERLABEL = {
+      bgcolor: "rgba(248,250,249,0.98)",
+      bordercolor: "rgba(20,28,26,0.35)",
+      font: { family: "Outfit, sans-serif", size: 13, color: "#1a221e" },
+    };
     const STATION_ORDER = [
       "Upper station 1","Upper station 2","Upper station 3","Upper station 4","Upper station 5",
       "Lower station 1","Lower station 2","Lower station 3","Lower station 4","Lower station 5",
@@ -693,6 +698,7 @@
           tickformat: "~s",
         },
         hovermode: "x unified",
+        hoverlabel: HOVERLABEL,
       };
       const opts = { displayModeBar: false, responsive: true, scrollZoom: false, doubleClick: false };
       const plotPromise = hourlyPlotReady
@@ -790,6 +796,7 @@
           showspikes: false,
         },
         hovermode: "closest",
+        hoverlabel: HOVERLABEL,
       }, { displayModeBar: false, responsive: true, scrollZoom: false, doubleClick: false });
     }
 
@@ -1044,6 +1051,7 @@
           showspikes: false,
         },
         hovermode: "closest",
+        hoverlabel: HOVERLABEL,
       };
       const opts = { displayModeBar: false, responsive: true, scrollZoom: false, doubleClick: false };
       // Ensure container is a clean Plotly target after empty-state HTML.
