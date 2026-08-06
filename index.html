@@ -404,7 +404,7 @@
       <p id="error" class="error hidden"></p>
       <div class="panel"><div id="chart"></div></div>
       <h2>Latest city / hub totals</h2>
-      <p class="caption">Grouped modules. Delta is the latest 20-minute change. ATL = ATL+PGV+FAY; LAX = LAX+SJC+SEA.</p>
+      <p class="caption">Grouped modules. Delta is the latest 20-minute change. ATL = ATL+PGV+FAY; LAX = LAX+SJC+SEA (breakdown on separate lines).</p>
       <div id="tiles" class="city-modules"></div>
     </section>
 
@@ -466,6 +466,10 @@
       "Lower station 1","Lower station 2","Lower station 3","Lower station 4","Lower station 5",
     ];
     const CITY_BLOCK_7PM = ["ALB", "SWF", "SYR", "RIC", "PVD2"];
+    const CITY_BLOCK_9PM = [
+      "ANT", "BK", "DCA", "BTO", "BOS", "MHT", "PVD1", "PWM", "RDU", "GSO",
+      "CLT", "MDT", "CT", "AT", "AVP", "BUF", "ROC", "ORF", "DOV", "PHL", "PIT",
+    ];
     const CITY_BLOCK_REGION = ["ATL", "MIA", "ORD", "DFW", "LAX"];
     const CITY_BLOCK_NYC = ["EWR", "JFK"];
     const ATL_PARTS = ["ATL", "PGV", "FAY"];
@@ -473,6 +477,7 @@
     const CITY_ROLLED_PARTS = new Set(["PGV", "FAY", "SJC", "SEA"]);
     const CITY_RESERVED = new Set([
       ...CITY_BLOCK_7PM,
+      ...CITY_BLOCK_9PM,
       ...CITY_BLOCK_REGION,
       ...CITY_BLOCK_NYC,
       ...CITY_ROLLED_PARTS,
@@ -826,7 +831,7 @@
       const d = Number(deltaVolume || 0);
       const delta = d >= 0 ? `+${fmt(d)}` : fmt(d);
       const detail = breakdown
-        ? `<div class="breakdown">${breakdown.map((b) => `${b.city} ${fmt(b.total_volume)}`).join(" · ")}</div>`
+        ? `<div class="breakdown">${breakdown.map((b) => `${b.city} ${fmt(b.total_volume)}`).join("<br>")}</div>`
         : "";
       return `<div class="tile">
           <div class="code">${code}</div>
@@ -838,7 +843,7 @@
 
     function renderTiles(latestRows) {
       const map = cityRowMap(latestRows);
-      const otherCities = [...map.keys()]
+      const leftovers = [...map.keys()]
         .filter((c) => !CITY_RESERVED.has(c))
         .sort((a, b) => a.localeCompare(b));
 
@@ -856,10 +861,10 @@
         return tileHtml(code, r ? r.total_volume : 0, r ? r.delta_volume : 0);
       }).join("");
 
-      const blockOther = otherCities.map((code) => {
+      const block9 = [...CITY_BLOCK_9PM, ...leftovers].map((code) => {
         const r = map.get(code);
-        return tileHtml(code, r.total_volume, r.delta_volume);
-      }).join("") || `<div class="tile"><div class="code">—</div><div class="vol">0</div></div>`;
+        return tileHtml(code, r ? r.total_volume : 0, r ? r.delta_volume : 0);
+      }).join("");
 
       const blockRegion = CITY_BLOCK_REGION.map((code) => {
         if (code === "ATL") return tileHtml("ATL", atl.total_volume, atl.delta_volume, atl.breakdown);
@@ -875,7 +880,7 @@
 
       $("tiles").innerHTML = [
         module("7pm 转运", block7),
-        module("Other cities", blockOther),
+        module("9pm 转运", block9),
         module("大区", blockRegion),
         module("EWR / JFK", blockNyc),
       ].join("");
@@ -910,9 +915,13 @@
       const lax = aggregateCitySeries(series, LAX_PARTS, "LAX");
       const merged = [...base, ...atl, ...lax];
       const present = new Set(merged.map((r) => r.city));
+      const leftovers = [...present]
+        .filter((c) => !CITY_RESERVED.has(c) && c !== "ATL" && c !== "LAX")
+        .sort((a, b) => a.localeCompare(b));
       const order = [
         ...CITY_BLOCK_7PM,
-        ...[...present].filter((c) => !CITY_RESERVED.has(c) && c !== "ATL" && c !== "LAX").sort((a, b) => a.localeCompare(b)),
+        ...CITY_BLOCK_9PM,
+        ...leftovers,
         ...CITY_BLOCK_REGION,
         ...CITY_BLOCK_NYC,
       ].filter((c) => present.has(c));
