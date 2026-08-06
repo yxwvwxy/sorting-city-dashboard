@@ -1068,10 +1068,14 @@
       const batch = feedBatches[Number($("feed-batch").value)];
       if (!batch) return;
       renderMeta(batch, "feed-meta");
-      const [rows, hourlyRows] = await Promise.all([
-        rpc("feed_station_series", { p_subbatch: batch.subbatch }),
-        rpc("hourly_throughput_series", { p_subbatch: batch.subbatch }).catch(() => []),
-      ]);
+      const rows = await rpc("feed_station_series", { p_subbatch: batch.subbatch });
+      let hourlyRows = [];
+      try {
+        hourlyRows = await rpc("hourly_throughput_series", { p_subbatch: batch.subbatch });
+      } catch (hourlyErr) {
+        console.error("hourly_throughput_series failed", hourlyErr);
+        showError("feed-error", hourlyErr);
+      }
       renderHourlyThroughput(hourlyRows || []);
       if (!rows.length) {
         $("upper-cards").innerHTML = "";
