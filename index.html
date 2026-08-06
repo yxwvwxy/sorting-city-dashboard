@@ -531,14 +531,15 @@
 
     /**
      * Period start for a scrape ending at iso.
-     * Opening period = first scrape → next :30 (tab labeled as first scrape time).
+     * Opening period = first scrape → next :30 inclusive (tab labeled as first scrape time).
      * Later periods use normal :30 buckets.
+     * Note: :30 scrapes are :30:xx, so compare with a small grace past exact :30:00.
      */
     function hourBucketStartMs(iso, firstIso) {
       const t = new Date(iso).getTime();
       const firstMs = new Date(firstIso).getTime();
-      const secondMs = nextEtHalfHourMs(firstIso);
-      if (t <= secondMs) return firstMs;
+      const openingEndMs = nextEtHalfHourMs(firstIso);
+      if (t <= openingEndMs + 90 * 1000) return firstMs;
       return regularHalfHourBucketMs(iso);
     }
 
