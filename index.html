@@ -317,7 +317,7 @@
     }
     .feed-chart-wrap {
       display: grid;
-      grid-template-columns: 1fr 140px;
+      grid-template-columns: 1fr 168px;
       gap: 0.75rem;
       align-items: stretch;
     }
@@ -355,10 +355,12 @@
     .hour-btn {
       width: 100%;
       min-width: 0;
-      padding: 0.4rem 0.35rem;
-      font-size: 0.72rem;
+      padding: 0.45rem 0.35rem;
+      font-size: 0.68rem;
       font-family: "IBM Plex Mono", monospace;
       font-weight: 500;
+      line-height: 1.25;
+      white-space: normal;
       background: transparent;
       border: 1px solid var(--line);
       color: #d7e0d9;
@@ -466,11 +468,11 @@
         <div id="lower-cards" class="station-grid"></div>
       </div>
 
-      <p class="caption">All Day = one stack per period, oldest at the x-axis. Earliest tab = first scrape time; later tabs are :30 marks. Each tab shows only that period’s total. Click a stack for details.</p>
+      <p class="caption">All Day = one stack per period, oldest at the x-axis. Tabs show time ranges (normally :30–:30; gaps/opening use actual scrape span). Click a stack for details.</p>
       <div class="feed-chart-wrap">
         <div class="panel"><div id="feed-chart"></div></div>
         <div class="hour-axis">
-          <div class="axis-title">Hour start (ET)</div>
+          <div class="axis-title">Period (ET)</div>
           <div id="hour-buttons"></div>
         </div>
       </div>
@@ -1172,6 +1174,8 @@
           const delta = Math.max(0, Number(cur.volume || 0) - Number(prev.volume || 0));
           const key = `${name}|${hourStartMs}`;
           hourTotals.set(key, (hourTotals.get(key) || 0) + delta);
+          const prevMs = new Date(prev.scraped_at).getTime();
+          const curMs = new Date(cur.scraped_at).getTime();
 
           if (!hourMeta.has(hourStartMs)) {
             const isOpening = firstMs != null && hourStartMs === firstMs;
@@ -1179,15 +1183,17 @@
             hourMeta.set(hourStartMs, {
               startMs: hourStartMs,
               endMs,
-              shortLabel: isOpening ? formatHour12(firstIso) : shortLabelFromMs(hourStartMs),
-              label: `${isOpening ? formatHour12(firstIso) : shortLabelFromMs(hourStartMs)}-${shortLabelFromMs(endMs)}`,
+              actualStartMs: prevMs,
+              actualEndMs: curMs,
               complete: false,
               opening: isOpening,
             });
           }
           const tab = hourMeta.get(hourStartMs);
+          tab.actualStartMs = Math.min(tab.actualStartMs, prevMs);
+          tab.actualEndMs = Math.max(tab.actualEndMs, curMs);
           if (tab.opening) {
-            if (new Date(cur.scraped_at).getTime() >= secondMs - 60 * 1000) tab.complete = true;
+            if (curMs >= secondMs - 60 * 1000) tab.complete = true;
           } else {
             const minute = Number(etParts(cur.scraped_at, { minute: "2-digit", hour12: false }).minute);
             if (minute >= 25 && minute <= 40) tab.complete = true;
@@ -1198,6 +1204,22 @@
       const hourTabs = [...hourMeta.values()].sort((a, b) => a.startMs - b.startMs);
       for (const tab of hourTabs) {
         if (hourTabs.some((h) => h.startMs > tab.startMs)) tab.complete = true;
+        const nominalStart = tab.opening ? firstMs : tab.startMs;
+        const nominalEnd = tab.opening ? secondMs : addOneHourMs(tab.startMs);
+        const nominalSpanMin = (nominalEnd - nominalStart) / 60_000;
+        const actualSpanMin = (tab.actualEndMs - tab.actualStartMs) / 60_000;
+        // Normal closed :30–:30 (or opening that landed on the :30) → nominal range.
+        // Gaps / incomplete / odd spans → actual scrape-to-scrape range.
+        const isSpecial = tab.opening
+          || !tab.complete
+          || actualSpanMin > nominalSpanMin + 15
+          || tab.actualStartMs < nominalStart - 5 * 60_000;
+        const labelStart = isSpecial ? tab.actualStartMs : nominalStart;
+        const labelEnd = isSpecial ? tab.actualEndMs : nominalEnd;
+        const range = `${shortLabelFromMs(labelStart)}–${shortLabelFromMs(labelEnd)}`;
+        tab.shortLabel = range;
+        tab.label = range;
+        tab.special = isSpecial;
       }
 
       // One layer per station per hour (used by chart).
