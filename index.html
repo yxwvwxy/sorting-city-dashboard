@@ -618,6 +618,40 @@
       );
     }
 
+    /**
+     * Hourly-average denominator (ET wall hours):
+     * - 9–10pm (bucket hour 21): always 0.5 when that hour is already past
+     * - other completed hours: 1.0 each
+     * - current in-progress hour: minutes into the hour from latest scrape / 60
+     */
+    function hourlyAverageElapsedHours(rows, lastScrapedIso) {
+      const p = etParts(lastScrapedIso, {
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+      });
+      const curY = Number(p.year);
+      const curM = Number(p.month) - 1;
+      const curD = Number(p.day);
+      const curH = Number(p.hour);
+      const curMin = Number(p.minute) + Number(p.second || 0) / 60;
+      const currentBucketMs = Date.UTC(curY, curM, curD, curH, 0, 0);
+
+      let hours = 0;
+      for (const row of rows) {
+        const bMs = bucketWallMs(row.bucket_time);
+        const b = new Date(bMs);
+        const bucketHour = b.getUTCHours();
+        if (bMs === currentBucketMs) {
+          hours += Math.max(curMin, 1) / 60;
+        } else if (bucketHour === 21) {
+          hours += 0.5; // 9–10pm opening hour
+        } else {
+          hours += 1;
+        }
+      }
+      return Math.max(hours, 1 / 60);
+    }
+
     function renderHourlyThroughput(rows) {
       if (!rows.length) {
         $("hourly-total").textContent = "—";
@@ -627,12 +661,8 @@
         return;
       }
       const total = Number(rows[rows.length - 1].cumulative_volume || 0);
-      // Denominator = production span on the chart: first hour bucket → latest scrape (ET).
-      // (Not first→last feed scrape — that can be only a few hours while bars span the whole day.)
-      const firstMs = bucketWallMs(rows[0].bucket_time);
       const lastIso = rows[0].last_scraped_at || rows[rows.length - 1].scraped_at;
-      const lastMs = scrapedEtWallMs(lastIso);
-      const elapsedHours = Math.max((lastMs - firstMs) / 3_600_000, 1 / 60);
+      const elapsedHours = hourlyAverageElapsedHours(rows, lastIso);
       const avg = total / elapsedHours;
       $("hourly-total").textContent = fmt(total);
       $("hourly-avg").textContent = fmt(Math.round(avg));
