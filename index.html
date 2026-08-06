@@ -243,14 +243,34 @@
     }
     .login-card button[type="submit"] { width: 100%; padding: 0.7rem; }
     .section {
-      margin-top: 2rem;
-      padding-top: 1.5rem;
-      border-top: 1px solid var(--line);
-    }
-    .section:first-of-type {
-      margin-top: 0;
+      margin-top: 1.25rem;
       padding-top: 0;
       border-top: 0;
+    }
+    .app-tabs {
+      display: flex;
+      gap: 0.45rem;
+      margin: 0 0 0.35rem;
+      flex-wrap: wrap;
+    }
+    .app-tab {
+      min-width: auto;
+      padding: 0.5rem 0.95rem;
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .app-tab:hover {
+      border-color: rgba(240,162,2,0.45);
+      color: var(--ink);
+      filter: none;
+    }
+    .app-tab.active {
+      background: var(--amber);
+      border-color: var(--amber);
+      color: #1a1200;
+      font-weight: 600;
     }
     .deck-block { margin-bottom: 1rem; }
     .deck-label {
@@ -390,17 +410,16 @@
       </div>
     </div>
 
+    <nav id="app-tabs" class="app-tabs hidden" aria-label="Dashboard sections">
+      <button type="button" class="app-tab" data-tab="city" id="tab-city">City / hub</button>
+      <button type="button" class="app-tab" data-tab="feed" id="tab-feed">Feed &amp; hourly</button>
+    </nav>
+
     <section id="city-section" class="section hidden">
-      <h2>City / hub growth</h2>
+      <h2>City / hub</h2>
       <div class="controls">
         <label>Batch / ops day
           <select id="batch"></select>
-        </label>
-        <label>Chart metric
-          <select id="metric">
-            <option value="total">Cumulative total</option>
-            <option value="delta">20-min increment</option>
-          </select>
         </label>
         <label>&nbsp;
           <button id="reload" type="button">Refresh</button>
@@ -417,7 +436,7 @@
     </section>
 
     <section id="feed-section" class="section hidden">
-      <h2>Feed station hourly</h2>
+      <h2>Feed &amp; hourly</h2>
       <div class="controls">
         <label>Batch / ops day
           <select id="feed-batch"></select>
@@ -507,6 +526,7 @@
     let hourlyPlotReady = false;
     let cityChartModel = { series: [], cities: [] };
     let cityChartSelection = CITY_CHART_DEFAULT.slice();
+    let activeTab = "city";
 
     function normalizeUsername(username) {
       return String(username || "").trim().toLowerCase().replace(/\s+/g, ".");
@@ -537,6 +557,42 @@
 
     function hasRole(name) {
       return roles.includes(name);
+    }
+
+    function resizeVisibleCharts() {
+      if (!window.Plotly) return;
+      requestAnimationFrame(() => {
+        try {
+          if (activeTab === "city" && hasRole("city")) Plotly.Plots.resize("chart");
+          if (activeTab === "feed" && hasRole("feed")) {
+            Plotly.Plots.resize("hourly-chart");
+            Plotly.Plots.resize("feed-chart");
+          }
+        } catch (_) { /* chart may not exist yet */ }
+      });
+    }
+
+    function setActiveTab(tab) {
+      const canCity = hasRole("city");
+      const canFeed = hasRole("feed");
+      if (tab === "city" && !canCity) tab = canFeed ? "feed" : "city";
+      if (tab === "feed" && !canFeed) tab = canCity ? "city" : "feed";
+      activeTab = tab;
+
+      $("city-section").classList.toggle("hidden", !(canCity && tab === "city"));
+      $("feed-section").classList.toggle("hidden", !(canFeed && tab === "feed"));
+
+      const tabCity = $("tab-city");
+      const tabFeed = $("tab-feed");
+      if (tabCity) {
+        tabCity.classList.toggle("hidden", !canCity);
+        tabCity.classList.toggle("active", tab === "city");
+      }
+      if (tabFeed) {
+        tabFeed.classList.toggle("hidden", !canFeed);
+        tabFeed.classList.toggle("active", tab === "feed");
+      }
+      resizeVisibleCharts();
     }
 
     function etParts(iso, opts) {
@@ -805,8 +861,20 @@
       if (!authed) return;
       $("user-email").textContent = displayName(session.user);
       roles = userRoles(session.user);
-      $("city-section").classList.toggle("hidden", !hasRole("city"));
-      $("feed-section").classList.toggle("hidden", !hasRole("feed"));
+      const canCity = hasRole("city");
+      const canFeed = hasRole("feed");
+      // Only show the tab bar when the user can switch (both roles).
+      $("app-tabs").classList.toggle("hidden", !(canCity && canFeed));
+      if (canCity && canFeed) {
+        setActiveTab(activeTab === "feed" ? "feed" : "city");
+      } else if (canFeed) {
+        setActiveTab("feed");
+      } else if (canCity) {
+        setActiveTab("city");
+      } else {
+        $("city-section").classList.add("hidden");
+        $("feed-section").classList.add("hidden");
+      }
     }
 
     function renderMeta(batch, elId) {
@@ -873,7 +941,7 @@
       }
       const available = new Set(cityChartModel.cities);
       const cities = cityChartSelection.filter((c) => available.has(c));
-      renderChart(cityChartModel.series, cities, $("metric").value);
+      renderChart(cityChartModel.series, cities);
       syncTileSelection();
     }
 
@@ -964,12 +1032,11 @@
       return { series: merged, cities: order };
     }
 
-    function renderChart(series, cities, metric) {
+    function renderChart(series, cities) {
       if (!cities.length) {
         Plotly.purge("chart");
         return;
       }
-      const yKey = metric === "delta" ? "delta_volume" : "total_volume";
       const traces = cities.map((city, i) => {
         const rows = series
           .filter((r) => r.city === city)
@@ -979,7 +1046,7 @@
           mode: "lines+markers",
           name: city,
           x: rows.map((r) => toEtPlotTime(r.scraped_at)),
-          y: rows.map((r) => r[yKey]),
+          y: rows.map((r) => Number(r.total_volume || 0)),
           line: { width: 2.4, color: COLORS[i % COLORS.length] },
           marker: { size: 7 },
           hovertemplate: `%{x} ET<br>${city}: %{y:,}<extra></extra>`,
@@ -1002,7 +1069,7 @@
           showspikes: false,
         },
         yaxis: {
-          title: metric === "delta" ? "Packages since previous scrape" : "Cumulative packages",
+          title: "Cumulative packages",
           gridcolor: "rgba(255,255,255,0.06)",
           zeroline: false,
           fixedrange: true,
@@ -1372,10 +1439,14 @@
       cityChartSelection = CITY_CHART_DEFAULT.slice();
       loadCitySeries().catch((e) => showError("error", e));
     });
-    $("metric").addEventListener("change", () => applyCityChart());
     $("reload").addEventListener("click", () => {
       cityChartSelection = CITY_CHART_DEFAULT.slice();
       loadBatchesInto("batch", "city").then(loadCitySeries).catch((e) => showError("error", e));
+    });
+    $("app-tabs").addEventListener("click", (event) => {
+      const btn = event.target.closest(".app-tab[data-tab]");
+      if (!btn || btn.classList.contains("hidden")) return;
+      setActiveTab(btn.dataset.tab);
     });
     $("tiles").addEventListener("click", (event) => {
       const tile = event.target.closest(".tile[data-city]");
@@ -1429,6 +1500,8 @@
         feedBatches = [];
         cityChartModel = { series: [], cities: [] };
         cityChartSelection = CITY_CHART_DEFAULT.slice();
+        activeTab = "city";
+        $("app-tabs").classList.add("hidden");
         $("tiles").innerHTML = "";
         $("upper-cards").innerHTML = "";
         $("lower-cards").innerHTML = "";
