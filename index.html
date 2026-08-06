@@ -158,7 +158,28 @@
       font-family: "IBM Plex Mono", monospace;
       font-size: 0.85rem;
     }
-    #chart, #feed-chart { width: 100%; height: 460px; }
+    #chart, #feed-chart, #hourly-chart { width: 100%; height: 460px; }
+    .hourly-log {
+      margin: 0 0 1.25rem;
+    }
+    .hourly-log h2 {
+      margin-bottom: 0.35rem;
+    }
+    .hourly-stats {
+      margin: 0 0 0.55rem;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.84rem;
+      color: #b7c4bc;
+      line-height: 1.55;
+    }
+    .hourly-stats strong {
+      color: var(--ink);
+      font-weight: 500;
+    }
+    .hourly-log .panel {
+      margin-bottom: 0;
+      background: rgba(0, 0, 0, 0.32);
+    }
     .hidden { display: none !important; }
     .topbar {
       display: flex;
@@ -383,6 +404,15 @@
       <div id="feed-meta" class="meta"></div>
       <p id="feed-error" class="error hidden"></p>
 
+      <div class="hourly-log">
+        <h2>Hourly throughput</h2>
+        <div id="hourly-stats" class="hourly-stats">
+          <div>Total Volume: <strong id="hourly-total">—</strong></div>
+          <div>Hourly Average: <strong id="hourly-avg">—</strong></div>
+        </div>
+        <div class="panel"><div id="hourly-chart"></div></div>
+      </div>
+
       <div class="deck-block">
         <p class="deck-label">Upper deck</p>
         <div id="upper-cards" class="station-grid"></div>
@@ -426,6 +456,7 @@
     let feedLatest = [];
     let feedMode = "all"; // "all" | hourStartMs number
     let feedPlotReady = false;
+    let hourlyPlotReady = false;
 
     function normalizeUsername(username) {
       return String(username || "").trim().toLowerCase().replace(/\s+/g, ".");
@@ -549,6 +580,102 @@
 
     function shortLabelFromMs(ms) {
       return formatHour12(new Date(ms).toISOString());
+    }
+
+    /** bucket_time is ET wall clock stored as UTC — label from UTC parts. */
+    function bucketWallLabel(iso) {
+      const d = new Date(iso);
+      const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const dd = String(d.getUTCDate()).padStart(2, "0");
+      const hh = String(d.getUTCHours()).padStart(2, "0");
+      const mi = String(d.getUTCMinutes()).padStart(2, "0");
+      return `${mm}-${dd} ${hh}:${mi}`;
+    }
+
+    function renderHourlyThroughput(rows) {
+      if (!rows.length) {
+        $("hourly-total").textContent = "—";
+        $("hourly-avg").textContent = "—";
+        Plotly.purge("hourly-chart");
+        hourlyPlotReady = false;
+        return;
+      }
+      const total = Number(rows[rows.length - 1].cumulative_volume || 0);
+      const firstMs = new Date(rows[0].first_scraped_at || rows[0].scraped_at).getTime();
+      const lastMs = new Date(rows[0].last_scraped_at || rows[rows.length - 1].scraped_at).getTime();
+      const elapsedHours = Math.max((lastMs - firstMs) / 3_600_000, 1 / 60);
+      // Hourly average = total volume ÷ elapsed hours between first and latest scrape.
+      const avg = total / elapsedHours;
+      $("hourly-total").textContent = fmt(total);
+      $("hourly-avg").textContent = fmt(Math.round(avg));
+
+      const x = rows.map((r) => bucketWallLabel(r.bucket_time));
+      const hourly = rows.map((r) => Number(r.hourly_volume || 0));
+      const cumulative = rows.map((r) => Number(r.cumulative_volume || 0));
+      const traces = [
+        {
+          type: "bar",
+          name: "Hourly volume",
+          x,
+          y: hourly,
+          marker: { color: "#b7a7d9" },
+          hovertemplate: "%{x}<br>Hourly: %{y:,}<extra></extra>",
+        },
+        {
+          type: "scatter",
+          mode: "lines+markers",
+          name: "Cumulative volume",
+          x,
+          y: cumulative,
+          yaxis: "y2",
+          line: { color: "#7dffb3", width: 2 },
+          marker: { size: 5, color: "#7dffb3" },
+          hovertemplate: "%{x}<br>Cumulative: %{y:,}<extra></extra>",
+        },
+      ];
+      const layout = {
+        margin: { l: 55, r: 55, t: 16, b: 56 },
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+        font: { family: "Outfit, sans-serif", color: "#dce6df" },
+        showlegend: true,
+        legend: { orientation: "h", y: -0.18, x: 0.5, xanchor: "center" },
+        dragmode: false,
+        barmode: "overlay",
+        xaxis: {
+          type: "category",
+          tickangle: -30,
+          tickvals: x.filter((_, i) => i % 2 === 0),
+          gridcolor: "rgba(255,255,255,0.06)",
+          zeroline: false,
+          fixedrange: true,
+          showspikes: false,
+        },
+        yaxis: {
+          title: "",
+          gridcolor: "rgba(255,255,255,0.06)",
+          zeroline: false,
+          fixedrange: true,
+          showspikes: false,
+          tickformat: "~s",
+        },
+        yaxis2: {
+          overlaying: "y",
+          side: "right",
+          title: "",
+          showgrid: false,
+          zeroline: false,
+          fixedrange: true,
+          showspikes: false,
+          tickformat: "~s",
+        },
+        hovermode: "x unified",
+      };
+      const opts = { displayModeBar: false, responsive: true, scrollZoom: false, doubleClick: false };
+      const plotPromise = hourlyPlotReady
+        ? Plotly.react("hourly-chart", traces, layout, opts)
+        : Plotly.newPlot("hourly-chart", traces, layout, opts);
+      plotPromise.then(() => { hourlyPlotReady = true; });
     }
 
     async function rpc(name, args = {}) {
@@ -941,7 +1068,11 @@
       const batch = feedBatches[Number($("feed-batch").value)];
       if (!batch) return;
       renderMeta(batch, "feed-meta");
-      const rows = await rpc("feed_station_series", { p_subbatch: batch.subbatch });
+      const [rows, hourlyRows] = await Promise.all([
+        rpc("feed_station_series", { p_subbatch: batch.subbatch }),
+        rpc("hourly_throughput_series", { p_subbatch: batch.subbatch }).catch(() => []),
+      ]);
+      renderHourlyThroughput(hourlyRows || []);
       if (!rows.length) {
         $("upper-cards").innerHTML = "";
         $("lower-cards").innerHTML = "";
@@ -1023,10 +1154,15 @@
         $("tiles").innerHTML = "";
         $("upper-cards").innerHTML = "";
         $("lower-cards").innerHTML = "";
+        $("hourly-total").textContent = "—";
+        $("hourly-avg").textContent = "—";
         if (window.Plotly) {
           Plotly.purge("chart");
           Plotly.purge("feed-chart");
+          Plotly.purge("hourly-chart");
         }
+        feedPlotReady = false;
+        hourlyPlotReady = false;
       }
     });
 
