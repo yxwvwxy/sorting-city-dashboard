@@ -805,8 +805,9 @@
         barmode: "overlay",
         xaxis: {
           type: "category",
-          tickangle: -30,
-          tickvals: x.filter((_, i) => i % 2 === 0),
+          tickangle: -40,
+          // Show every hour so gaps (e.g. missing 6pm) are obvious; denser labels OK.
+          dtick: 1,
           gridcolor: "rgba(255,255,255,0.06)",
           zeroline: false,
           fixedrange: true,
